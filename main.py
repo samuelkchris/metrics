@@ -1,10 +1,7 @@
-# metrics_server.py
-
 import asyncio
-import logging
-
 import psutil
-from fastapi import FastAPI, WebSocket
+import logging
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -22,7 +19,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -42,20 +38,23 @@ async def websocket_endpoint(websocket: WebSocket):
 
                 # Wait for 1 second before sending the next update
                 await asyncio.sleep(1)
+            except WebSocketDisconnect:
+                logger.info("WebSocket disconnected")
+                break
             except asyncio.CancelledError:
-                logger.info("WebSocket connection closed by client")
+                logger.info("WebSocket connection cancelled")
                 break
             except Exception as e:
                 logger.error(f"Error in WebSocket loop: {e}")
                 await asyncio.sleep(5)  # Wait for 5 seconds before retrying
+    except Exception as e:
+        logger.error(f"Unexpected error in WebSocket endpoint: {e}")
     finally:
-        await websocket.close()
-
+        logger.info("WebSocket connection closed")
 
 @app.get("/")
 async def root():
     return {"message": "System Monitor API"}
-
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request, exc):
@@ -65,8 +64,6 @@ async def general_exception_handler(request, exc):
         content={"message": "An internal server error occurred"}
     )
 
-
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=9091, log_level="info")
